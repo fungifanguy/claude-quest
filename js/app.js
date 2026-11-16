@@ -19,13 +19,19 @@
   const sid = (li, si) => LEVELS[li].id + '.' + si;
 
   /* ---------------------------------------------------------- state */
+  // mode: 'full' = levels unlock in order; 'free' = any level, any time.
+  const fresh = () => ({ done: {}, xp: 0, mode: null, avatar: 'classic' });
   let S = load();
   function load() {
     try {
       const v = JSON.parse(localStorage.getItem(KEY));
-      if (v && typeof v.done === 'object' && typeof v.xp === 'number') return v;
+      if (v && typeof v.done === 'object' && typeof v.xp === 'number') {
+        if (v.mode !== 'full' && v.mode !== 'free') v.mode = null;
+        if (v.avatar !== 'blonde') v.avatar = 'classic';
+        return v;
+      }
     } catch (e) { /* storage unavailable or corrupt: start fresh */ }
-    return { done: {}, xp: 0 };
+    return fresh();
   }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* play on without persistence */ }
@@ -34,7 +40,7 @@
   const isDone = (li, si) => !!S.done[sid(li, si)];
   const doneCount = (li) => LEVELS[li].steps.filter((_, si) => isDone(li, si)).length;
   const levelComplete = (li) => doneCount(li) === LEVELS[li].steps.length;
-  const levelUnlocked = (li) => li === 0 || levelComplete(li - 1);
+  const levelUnlocked = (li) => S.mode === 'free' || li === 0 || levelComplete(li - 1);
   function firstOpen(li) {
     const n = LEVELS[li].steps.length;
     for (let i = 0; i < n; i++) if (!isDone(li, i)) return i;
@@ -42,12 +48,39 @@
   }
   const allComplete = () => LEVELS.every((_, i) => levelComplete(i));
 
-  let view = { level: 0, step: 0 };
-  (function initialView() {
-    let li = LEVELS.findIndex((_, i) => !levelComplete(i));
-    if (li < 0) li = LEVELS.length - 1;
-    view = { level: li, step: firstOpen(li) };
-  })();
+  function nextIncomplete() {
+    const li = LEVELS.findIndex((_, i) => !levelComplete(i));
+    return li < 0 ? LEVELS.length - 1 : li;
+  }
+  /** Jump into a level: resume where you left off, or replay from the top if it is finished. */
+  function openLevel(li) {
+    view = { screen: 'play', level: li, step: levelComplete(li) ? 0 : firstOpen(li) };
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  let view = { screen: 'home', level: 0, step: 0 };
+  if (S.mode === 'full') {
+    const li = nextIncomplete();
+    view = { screen: 'play', level: li, step: firstOpen(li) };
+  }
+
+  /* ---------------------------------------------------------- avatars */
+  const AVATARS = { classic: 'Claude', blonde: 'Blonde Claude' };
+  function avatarSVG(kind) {
+    const blonde = kind === 'blonde';
+    return (
+      '<svg class="avatar" viewBox="0 0 24 24" shape-rendering="crispEdges" role="img" aria-label="' + AVATARS[blonde ? 'blonde' : 'classic'] + '">' +
+      (blonde
+        ? '<path fill="#f3d36b" d="M3 5h4v17H3zM17 5h4v17h-4zM5 3h14v4H5z"/>' +
+          '<path fill="#dcb444" d="M4 9h1v12H4zM19 9h1v12h-1zM6 11h1v10H6zM17 11h1v10h-1z"/>'
+        : '') +
+      '<path fill="#d97757" d="M6 6h12v11H6zM3 11h3v3H3zM18 11h3v3h-3zM7 17h2v4H7zM10 17h1.5v4H10zM12.5 17H14v4h-1.5zM15 17h2v4h-2z"/>' +
+      '<path fill="#2a1a14" d="M9 10h1.5v3H9zM13.5 10H15v3h-1.5z"/>' +
+      (blonde ? '<path fill="#f3d36b" d="M5 4h14v4H5zM6 8h2v2H6zM16 8h2v2h-2z"/><path fill="#fae79a" d="M8 4h5v1H8z"/>' : '') +
+      '</svg>'
+    );
+  }
 
   let cleanups = [];
   function cleanup() {
@@ -63,6 +96,9 @@
   }
 
   function renderTop() {
+    $('#avatar').innerHTML = S.mode === 'full' ? avatarSVG(S.avatar) : '';
+    $('#mode').textContent = S.mode === 'full' ? 'Full quest' : S.mode === 'free' ? 'Specific quest' : '';
+    $('#menu').hidden = view.screen === 'home';
     $('#rank').textContent = rankFor(S.xp);
     $('#xp-text').textContent = S.xp + ' / ' + MAX_XP + ' XP';
     $('#xp-fill').style.width = Math.min(100, (S.xp / MAX_XP) * 100) + '%';
@@ -84,22 +120,94 @@
         '<span class="lvl-title">' + esc(L.title) + '</span>' +
         '<span class="lvl-state">' + state + '</span></span>';
       if (!unlocked) b.title = 'Finish level ' + li + ' to unlock';
-      b.addEventListener('click', () => {
-        view = { level: li, step: Math.min(firstOpen(li), L.steps.length - (complete ? 0 : 1)) };
-        if (complete) view.step = 0; // revisit from the start
-        render();
-      });
+      b.addEventListener('click', () => openLevel(li));
       map.appendChild(b);
     });
   }
 
   /* ---------------------------------------------------------- stage */
   function render() {
+    const home = view.screen === 'home';
+    $('.layout').classList.toggle('solo', home);
     renderTop();
+    if (home) {
+      cleanup();
+      $('#map').innerHTML = '';
+      return renderHome($('#stage'));
+    }
     renderMap();
     renderStage();
     const cur = $('.lvl.current');
     if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  function renderHome(stage) {
+    const started = Object.keys(S.done).length > 0;
+    const resume = nextIncomplete();
+    const fullDone = allComplete();
+    stage.innerHTML =
+      '<div class="home">' +
+      '<h1>Choose how to play</h1>' +
+      '<p class="home-sub">Progress and XP are shared between the two modes, so you can switch whenever you like.</p>' +
+      '<div class="modes">' +
+      '<section class="card mode-card">' +
+      '<div class="tag">Mode 1</div><h2>Full Quest</h2>' +
+      '<p>The whole game, start to finish. Levels unlock one at a time: pass each gate test to open the next.</p>' +
+      '<div class="pick-label">Choose your avatar</div>' +
+      '<div class="avatars" role="radiogroup" aria-label="Avatar"></div>' +
+      '<button class="primary" id="start-full">' +
+      (fullDone ? 'Replay the full quest' : started ? 'Continue · Level ' + (resume + 1) + ' →' : 'Start the full quest →') +
+      '</button>' +
+      '</section>' +
+      '<section class="card mode-card">' +
+      '<div class="tag">Mode 2</div><h2>Specific Quest</h2>' +
+      '<p>Jump straight to the topic you need. Every level is open, in any order.</p>' +
+      '<div class="pick-label">Pick a level</div>' +
+      '<div class="level-grid"></div>' +
+      '</section>' +
+      '</div></div>';
+
+    const av = $('.avatars', stage);
+    Object.keys(AVATARS).forEach((kind) => {
+      const b = document.createElement('button');
+      b.className = 'avatar-pick' + (S.avatar === kind ? ' chosen' : '');
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(S.avatar === kind));
+      b.innerHTML = avatarSVG(kind) + '<span>' + AVATARS[kind] + '</span>';
+      b.addEventListener('click', () => {
+        S.avatar = kind;
+        save();
+        av.querySelectorAll('.avatar-pick').forEach((x) => {
+          x.classList.toggle('chosen', x === b);
+          x.setAttribute('aria-checked', String(x === b));
+        });
+      });
+      av.appendChild(b);
+    });
+
+    $('#start-full', stage).addEventListener('click', () => {
+      S.mode = 'full';
+      save();
+      openLevel(fullDone ? 0 : resume);
+    });
+
+    const grid = $('.level-grid', stage);
+    LEVELS.forEach((L, li) => {
+      const complete = levelComplete(li);
+      const b = document.createElement('button');
+      b.className = 'lvl-pick' + (complete ? ' complete' : '');
+      b.innerHTML =
+        '<span class="lvl-icon">' + esc(L.icon) + '</span>' +
+        '<span class="lvl-text"><span class="lvl-title">' + (li + 1) + '. ' + esc(L.title) + '</span>' +
+        '<span class="lvl-tagline">' + esc(L.tagline) + '</span>' +
+        '<span class="lvl-state">' + (complete ? 'Complete' : doneCount(li) + ' / ' + L.steps.length) + '</span></span>';
+      b.addEventListener('click', () => {
+        S.mode = 'free';
+        save();
+        openLevel(li);
+      });
+      grid.appendChild(b);
+    });
   }
 
   function renderStage() {
@@ -119,6 +227,7 @@
       '<div class="dots" role="tablist"></div>' +
       '</div>' +
       '<section class="card step-' + step.type + '">' +
+      (S.mode === 'full' ? '<div class="guide">' + avatarSVG(S.avatar) + '</div>' : '') +
       '<div class="tag">' + tagFor(step) + '</div>' +
       '<h1>' + esc(step.title) + '</h1>' +
       '<div class="body"></div>' +
@@ -203,11 +312,12 @@
   function renderLevelDone(stage, li) {
     const L = LEVELS[li];
     const last = li === LEVELS.length - 1;
-    if (last && allComplete()) {
+    const hero = S.mode === 'full' ? '<div class="big-avatar">' + avatarSVG(S.avatar) + '</div>' : null;
+    if (allComplete() && (last || S.mode === 'free')) {
       const pct = Math.round((S.xp / MAX_XP) * 100);
       stage.innerHTML =
         '<section class="card finale">' +
-        '<div class="big-icon">✻</div>' +
+        (hero || '<div class="big-icon">✻</div>') +
         '<h1>Quest complete</h1>' +
         '<p>You cleared all ' + LEVELS.length + ' levels and passed the final exam.</p>' +
         '<div class="cert"><div class="cert-rank">' + esc(rankFor(S.xp)) + '</div>' +
@@ -218,23 +328,44 @@
         '</section>';
       return;
     }
-    stage.innerHTML =
+    const head =
       '<section class="card finale">' +
-      '<div class="big-icon">' + esc(L.icon) + '</div>' +
+      (hero || '<div class="big-icon">' + esc(L.icon) + '</div>') +
       '<h1>Level ' + (li + 1) + ' complete</h1>' +
-      '<p>' + esc(L.title) + ' is done. Rank: <strong>' + esc(rankFor(S.xp)) + '</strong> · ' + S.xp + ' XP</p>' +
-      '<p class="up-next">Unlocked: <strong>Level ' + (li + 2) + ' · ' + esc(LEVELS[li + 1].title) + '</strong><br>' + esc(LEVELS[li + 1].tagline) + '</p>' +
-      '<button class="primary" id="go">Start level ' + (li + 2) + ' →</button>' +
-      '</section>';
-    $('#go', stage).addEventListener('click', () => {
-      view = { level: li + 1, step: firstOpen(li + 1) };
-      render();
-      window.scrollTo(0, 0);
-    });
+      '<p>' + esc(L.title) + ' is done. Rank: <strong>' + esc(rankFor(S.xp)) + '</strong> · ' + S.xp + ' XP</p>';
+
+    if (S.mode === 'free') {
+      const left = LEVELS.length - LEVELS.filter((_, i) => levelComplete(i)).length;
+      stage.innerHTML = head +
+        '<p class="up-next">' + left + ' level' + (left === 1 ? '' : 's') + ' still to finish. Pick whichever you want next.</p>' +
+        '<button class="primary" id="go">Pick another level</button></section>';
+      $('#go', stage).addEventListener('click', goHome);
+    } else {
+      const N = LEVELS[li + 1];
+      stage.innerHTML = head +
+        '<p class="up-next">Unlocked: <strong>Level ' + (li + 2) + ' · ' + esc(N.title) + '</strong><br>' + esc(N.tagline) + '</p>' +
+        '<button class="primary" id="go">Start level ' + (li + 2) + ' →</button></section>';
+      $('#go', stage).addEventListener('click', () => openLevel(li + 1));
+    }
     $('#go', stage).focus({ preventScroll: true });
   }
 
+  function goHome() {
+    view = { screen: 'home', level: view.level, step: 0 };
+    render();
+    window.scrollTo(0, 0);
+  }
+
   /* ---------------------------------------------------------- helpers */
+  // Command history, kept for the whole visit so ↑ works across tasks.
+  const HISTORY = { shell: [], claude: [] };
+  const SHELL_BUILTINS = {
+    pwd: () => '/home/you/my-app',
+    ls: () => 'CLAUDE.md  README.md  build.log  package.json  src/  tests/',
+    whoami: () => 'you',
+    help: () => 'Keys:  ↑ ↓ history   Ctrl+L clear screen   Ctrl+U erase to start\n       Ctrl+K erase to end   Ctrl+A / Ctrl+E jump to start / end   Ctrl+C cancel line\nAlso:  clear, history, pwd, ls',
+  };
+
   function shuffled(n, avoidIdentity) {
     const a = Array.from({ length: n }, (_, i) => i);
     do {
@@ -409,7 +540,12 @@
         '<div class="term-log"></div>' +
         '<form class="term-row"><span class="ps">' + (step.mode === 'claude' ? '&gt;' : '$') + '</span>' +
         '<input type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Terminal input"></form>' +
-        '</div>';
+        '</div>' +
+        '<div class="term-keys"><kbd>↑</kbd> <kbd>↓</kbd> history · <kbd>Ctrl</kbd>+<kbd>L</kbd> clear · <kbd>Ctrl</kbd>+<kbd>U</kbd> erase line · <kbd>Ctrl</kbd>+<kbd>C</kbd> cancel</div>';
+      const hist = HISTORY[step.mode];
+      const ps = step.mode === 'claude' ? '> ' : '$ ';
+      let hi = hist.length; // position in history; hist.length means "the line being typed"
+      let draft = '';
       const objective = $('.objective', host);
       const log = $('.term-log', host);
       const form = $('.term-row', host);
@@ -439,14 +575,63 @@
       showObjective();
 
       term.addEventListener('click', () => { if (!String(window.getSelection())) input.focus(); });
+
+      function setLine(text, caret) {
+        input.value = text;
+        const at = caret === undefined ? text.length : caret;
+        input.setSelectionRange(at, at);
+      }
+      input.addEventListener('keydown', (e) => {
+        const ctrl = e.ctrlKey && !e.altKey && !e.metaKey;
+        const k = e.key.toLowerCase();
+        const at = input.selectionStart;
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (hi === hist.length) draft = input.value;
+          if (hi > 0) setLine(hist[--hi]);
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (hi < hist.length) { hi++; setLine(hi === hist.length ? draft : hist[hi]); }
+        } else if (ctrl && k === 'l') {
+          e.preventDefault();
+          log.innerHTML = '';
+        } else if (ctrl && k === 'u') {
+          e.preventDefault();
+          setLine(input.value.slice(at), 0);
+        } else if (ctrl && k === 'k') {
+          e.preventDefault();
+          setLine(input.value.slice(0, at));
+        } else if (ctrl && k === 'a') {
+          e.preventDefault();
+          input.setSelectionRange(0, 0);
+        } else if (ctrl && k === 'e') {
+          e.preventDefault();
+          setLine(input.value);
+        } else if (ctrl && k === 'c' && at === input.selectionEnd && !String(window.getSelection())) {
+          // Only when nothing is selected, so copying text still works.
+          e.preventDefault();
+          line(ps + input.value + '^C', 'dim');
+          setLine('');
+          hi = hist.length;
+          draft = '';
+        }
+      });
       form.addEventListener('submit', (e) => {
         e.preventDefault();
         const raw = input.value;
         const val = normalise(raw);
         if (!val) return;
         const cmd = step.cmds[ci];
-        line((step.mode === 'claude' ? '> ' : '$ ') + raw, 'echo');
+        line(ps + raw, 'echo');
         input.value = '';
+        if (hist[hist.length - 1] !== raw.trim()) hist.push(raw.trim());
+        hi = hist.length;
+        draft = '';
+        if (step.mode === 'shell') {
+          if (val === 'clear') { log.innerHTML = ''; return; }
+          if (val === 'history') { line(hist.map((h, i) => String(i + 1).padStart(4) + '  ' + h).join('\n'), 'out'); return; }
+          if (SHELL_BUILTINS[val]) { line(SHELL_BUILTINS[val](), 'out'); return; }
+        }
         if (cmd.accept.some((re) => re.test(val))) {
           if (cmd.out) line(cmd.out, 'out');
           ci++;
@@ -656,11 +841,12 @@
   /* ---------------------------------------------------------- boot */
   $('#reset').addEventListener('click', () => {
     if (!window.confirm('Erase all progress and XP and start again from level 1?')) return;
-    S = { done: {}, xp: 0 };
+    S = fresh();
     save();
-    view = { level: 0, step: 0 };
-    render();
+    goHome();
   });
+  $('#menu').addEventListener('click', goHome);
+  $('#home').addEventListener('click', goHome);
 
   render();
 })();

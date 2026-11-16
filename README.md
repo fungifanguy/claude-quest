@@ -10,6 +10,22 @@ Open `index.html` in a browser. No build step, no server, no network access.
 Progress and XP are saved in the browser's localStorage; the Reset button
 clears them.
 
+## Modes
+
+- **Full Quest** — the whole game in order. Each level unlocks when you pass
+  the previous gate test. You choose an avatar (Claude or Blonde Claude) that
+  accompanies you through the levels.
+- **Specific Quest** — every level is open; pick the one you want.
+
+Progress and XP are shared between modes. The Menu button (or the title)
+returns to the mode screen.
+
+## Terminal shortcuts
+
+The simulated terminals support ↑/↓ command history (kept across tasks),
+Ctrl+L or `clear`, Ctrl+U, Ctrl+K, Ctrl+A, Ctrl+E and Ctrl+C. The shell
+terminals also answer `history`, `pwd`, `ls` and `help`.
+
 ## Levels
 
 1. Boot Up — install, launch, first prompt, exit

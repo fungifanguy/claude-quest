@@ -8,13 +8,15 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand"><span class="logo">✻</span> Claude Code Quest</div>
+    <button class="brand" id="home" title="Back to the mode menu"><span class="logo">✻</span> Claude Code Quest</button>
     <div class="status">
+      <span class="who"><span id="avatar"></span><span id="mode"></span></span>
       <div class="rank" id="rank"></div>
       <div class="xp">
         <div class="xp-bar"><div class="xp-fill" id="xp-fill"></div></div>
         <span id="xp-text"></span>
       </div>
+      <button class="ghost small" id="menu">Menu</button>
       <button class="ghost small" id="reset" title="Erase all progress">Reset</button>
     </div>
   </header>
