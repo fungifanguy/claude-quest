@@ -408,6 +408,7 @@
     view.celebrate = false;
     const finale = allComplete() && (last || S.mode === 'free');
     const n = li + 1;
+    let nextLi = li + 1;
 
     let html =
       '<section class="card finale">' +
@@ -435,16 +436,20 @@
         html += '<p class="up-next">' + left + ' level' + (left === 1 ? '' : 's') + ' still to finish. Pick whichever you want next.</p>' +
           '<button class="primary" id="go">Pick another level</button>';
       } else {
-        const N = LEVELS[li + 1];
-        html += '<p class="up-next">Unlocked: <strong>Level ' + (n + 1) + ' · ' + esc(N.title) + '</strong><br>' + esc(N.tagline) + '</p>' +
-          '<button class="primary" id="go">Start level ' + (n + 1) + ' →</button>';
+        // Progress is shared with Specific Quest, so the next level may already be
+        // done (or this may be the last level with gaps earlier): go to the first gap.
+        nextLi = (last || levelComplete(li + 1)) && !allComplete() ? nextIncomplete() : li + 1;
+        const N = LEVELS[nextLi];
+        const label = nextLi !== li + 1 ? 'Still to finish' : levelComplete(nextLi) ? 'Next' : 'Unlocked';
+        html += '<p class="up-next">' + label + ': <strong>Level ' + (nextLi + 1) + ' · ' + esc(N.title) + '</strong><br>' + esc(N.tagline) + '</p>' +
+          '<button class="primary" id="go">' + (nextLi === li + 1 ? 'Start' : 'Go to') + ' level ' + (nextLi + 1) + ' →</button>';
       }
     }
     stage.innerHTML = html + '</section>';
     $('.finale', stage).appendChild(tryItList(li));
 
     const go = $('#go', stage);
-    go.addEventListener('click', finale ? openSheet : S.mode === 'free' ? goHome : () => openLevel(li + 1));
+    go.addEventListener('click', finale ? openSheet : S.mode === 'free' ? goHome : () => openLevel(nextLi));
     go.focus({ preventScroll: true });
 
     if (celebrate) {
@@ -1086,6 +1091,7 @@
       }
 
       function onKey(e) {
+        if (finished) return; // give Shift+Tab and Esc back to the page once the task is done
         if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); act('shift+tab'); }
         else if (e.key === 'Escape') { e.preventDefault(); act('esc'); }
       }
@@ -1099,6 +1105,7 @@
     if (!window.confirm('Erase all progress and XP and start again from level 1?')) return;
     S = fresh();
     save();
+    FX.setMuted(S.muted);
     goHome();
   });
   $('#menu').addEventListener('click', goHome);

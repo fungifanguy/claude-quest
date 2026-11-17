@@ -1,6 +1,6 @@
 // Sanity checks for the level data: every task must be solvable by its own
 // model answer, and must reject its listed wrong answers.
-//   node claude-quest/tests/levels.test.js
+//   node tests/levels.test.js
 const LEVELS = require('../js/levels.js');
 
 const BOSS_IDS = ['mark', 'jeff', 'palmer', 'peter', 'jensen', 'elon', 'sam']; // keep in step with BOSSES in js/fx.js

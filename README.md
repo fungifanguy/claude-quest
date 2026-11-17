@@ -4,6 +4,11 @@ A browser game that teaches Claude Code from first launch to intermediate use.
 Ten levels, each a mix of short lessons and hands-on tasks, ending in a boss
 fight you must win to unlock the next level.
 
+> An unofficial fan project. Not affiliated with or endorsed by Anthropic.
+> The kings and the princess are parody caricatures. Claude Code changes
+> often, so check the [official docs](https://docs.claude.com/en/docs/claude-code/overview)
+> for the current details.
+
 ## Play
 
 Open `index.html` in a browser. No build step, no server, no network access.
@@ -77,7 +82,7 @@ checklists are in `js/extras.js`; sound, fireworks and boss art are in
 `js/fx.js`. Which king guards a level is the `boss` field on its boss step
 in `js/levels.js`. After changing it, run:
 
-    node claude-quest/tests/levels.test.js
+    node tests/levels.test.js
 
 This checks that every task accepts its own model answer and rejects its
 listed wrong answers.
