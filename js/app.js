@@ -20,7 +20,9 @@
 
   /* ---------------------------------------------------------- state */
   // mode: 'full' = levels unlock in order; 'free' = any level, any time.
-  const fresh = () => ({ done: {}, xp: 0, mode: null, avatar: 'classic' });
+  // miss / solved track the current run of each level (for flawless runs);
+  // perfect and tried are permanent records.
+  const fresh = () => ({ done: {}, xp: 0, mode: null, avatar: 'classic', miss: {}, solved: {}, perfect: {}, tried: {}, muted: false });
   let S = load();
   function load() {
     try {
@@ -28,6 +30,9 @@
       if (v && typeof v.done === 'object' && typeof v.xp === 'number') {
         if (v.mode !== 'full' && v.mode !== 'free') v.mode = null;
         if (v.avatar !== 'blonde') v.avatar = 'classic';
+        const base = fresh();
+        ['miss', 'solved', 'perfect', 'tried'].forEach((k) => { if (!v[k] || typeof v[k] !== 'object') v[k] = base[k]; });
+        v.muted = !!v.muted;
         return v;
       }
     } catch (e) { /* storage unavailable or corrupt: start fresh */ }
@@ -55,6 +60,11 @@
   /** Jump into a level: resume where you left off, or replay from the top if it is finished. */
   function openLevel(li) {
     view = { screen: 'play', level: li, step: levelComplete(li) ? 0 : firstOpen(li) };
+    if (view.step === 0) { // a fresh run (or a replay): the flawless record starts over
+      S.miss[LEVELS[li].id] = 0;
+      S.solved[LEVELS[li].id] = [];
+      save();
+    }
     render();
     window.scrollTo(0, 0);
   }
@@ -82,6 +92,22 @@
     );
   }
 
+  FX.setMuted(S.muted);
+
+  /** True if every task in the level was solved in the current run with no mistakes or hints. */
+  function flawlessRun(li) {
+    const L = LEVELS[li];
+    const solved = S.solved[L.id] || [];
+    return (S.miss[L.id] || 0) === 0 && L.steps.every((s, i) => s.type === 'lesson' || solved.includes(i));
+  }
+
+  function sheetStats() {
+    let got = 0;
+    let total = 0;
+    LEVELS.forEach((L, li) => EXTRAS[L.id].sheet.forEach(([si]) => { total++; if (isDone(li, si)) got++; }));
+    return { got, total };
+  }
+
   let cleanups = [];
   function cleanup() {
     cleanups.forEach((fn) => fn());
@@ -99,6 +125,10 @@
     $('#avatar').innerHTML = S.mode === 'full' ? avatarSVG(S.avatar) : '';
     $('#mode').textContent = S.mode === 'full' ? 'Full quest' : S.mode === 'free' ? 'Specific quest' : '';
     $('#menu').hidden = view.screen === 'home';
+    const st = sheetStats();
+    $('#sheet-n').textContent = st.got + '/' + st.total;
+    $('#mute').textContent = S.muted ? '🔇' : '🔊';
+    $('#mute').title = S.muted ? 'Sound is off' : 'Sound is on';
     $('#rank').textContent = rankFor(S.xp);
     $('#xp-text').textContent = S.xp + ' / ' + MAX_XP + ' XP';
     $('#xp-fill').style.width = Math.min(100, (S.xp / MAX_XP) * 100) + '%';
@@ -113,7 +143,7 @@
       const b = document.createElement('button');
       b.className = 'lvl' + (li === view.level ? ' current' : '') + (complete ? ' complete' : '') + (unlocked ? '' : ' locked');
       b.disabled = !unlocked;
-      const state = !unlocked ? 'Locked' : complete ? 'Complete' : doneCount(li) + ' / ' + L.steps.length;
+      const state = !unlocked ? 'Locked' : complete ? (S.perfect[L.id] ? '★ Flawless' : 'Complete') : doneCount(li) + ' / ' + L.steps.length;
       b.innerHTML =
         '<span class="lvl-icon">' + (unlocked ? esc(L.icon) : '🔒') + '</span>' +
         '<span class="lvl-text"><span class="lvl-n">Level ' + (li + 1) + '</span>' +
@@ -127,13 +157,13 @@
 
   /* ---------------------------------------------------------- stage */
   function render() {
-    const home = view.screen === 'home';
-    $('.layout').classList.toggle('solo', home);
+    const solo = view.screen !== 'play';
+    $('.layout').classList.toggle('solo', solo);
     renderTop();
-    if (home) {
+    if (solo) {
       cleanup();
       $('#map').innerHTML = '';
-      return renderHome($('#stage'));
+      return view.screen === 'sheet' ? renderSheet($('#stage')) : renderHome($('#stage'));
     }
     renderMap();
     renderStage();
@@ -147,6 +177,9 @@
     const fullDone = allComplete();
     stage.innerHTML =
       '<div class="home">' +
+      '<div class="story"><div class="cage">' + FX.princessSVG(false) + '</div>' +
+      '<p><strong>Princess Dario has been captured.</strong> Seven kings hold him in the last castle. ' +
+      'Learn Claude Code, beat a king at the end of every level, and get him out.</p></div>' +
       '<h1>Choose how to play</h1>' +
       '<p class="home-sub">Progress and XP are shared between the two modes, so you can switch whenever you like.</p>' +
       '<div class="modes">' +
@@ -200,7 +233,7 @@
         '<span class="lvl-icon">' + esc(L.icon) + '</span>' +
         '<span class="lvl-text"><span class="lvl-title">' + (li + 1) + '. ' + esc(L.title) + '</span>' +
         '<span class="lvl-tagline">' + esc(L.tagline) + '</span>' +
-        '<span class="lvl-state">' + (complete ? 'Complete' : doneCount(li) + ' / ' + L.steps.length) + '</span></span>';
+        '<span class="lvl-state">' + (complete ? (S.perfect[L.id] ? '★ Flawless' : 'Complete') : doneCount(li) + ' / ' + L.steps.length) + '</span></span>';
       b.addEventListener('click', () => {
         S.mode = 'free';
         save();
@@ -272,14 +305,28 @@
       return xp;
     }
 
+    const runSolved = S.solved[L.id] || (S.solved[L.id] = []);
     const ctx = {
-      finish(penalised, msg) {
+      /** Record a mistake (or a hint) against this run of the level. */
+      miss() {
+        S.miss[L.id] = (S.miss[L.id] || 0) + 1;
+        save();
+      },
+      finish(penalised, msg, quiet) {
+        if (penalised) ctx.miss();
+        if (!runSolved.includes(si)) runSolved.push(si);
         const xp = award(penalised);
-        feedback.innerHTML = '<span class="ok">✓ ' + esc(msg || 'Correct!') + (xp ? ' <b>+' + xp + ' XP</b>' : '') + '</span>';
+        save();
+        const unlocked = xp ? EXTRAS[L.id].sheet.filter((e) => e[0] === si).length : 0;
+        feedback.innerHTML = '<span class="ok">✓ ' + esc(msg || 'Correct!') + (xp ? ' <b>+' + xp + ' XP</b>' : '') +
+          (unlocked ? ' · 📒 +' + unlocked + ' on your cheat sheet' : '') + '</span>';
+        if (!quiet) FX.sfx('ok');
         next.disabled = false;
         next.focus({ preventScroll: true });
       },
-      fail(msg) {
+      fail(msg, quiet) {
+        ctx.miss();
+        if (!quiet) FX.sfx('bad');
         feedback.innerHTML = '<span class="bad">✗ ' + esc(msg) + '</span>';
       },
       note(msg) {
@@ -289,6 +336,14 @@
 
     next.addEventListener('click', () => {
       if (step.type === 'lesson') award(false);
+      if (si === L.steps.length - 1 && flawlessRun(li)) {
+        // Fireworks only once per run: clearing the record stops a Back/Continue repeat.
+        S.perfect[L.id] = true;
+        S.solved[L.id] = [];
+        save();
+        renderMap();
+        view.celebrate = true;
+      }
       view.step = si + 1;
       renderStage();
       window.scrollTo(0, 0);
@@ -305,49 +360,150 @@
       keys: 'Keyboard task · ' + XP.keys + ' XP',
       editor: 'File task · ' + XP.editor + ' XP',
       order: 'Ordering task · ' + XP.order + ' XP',
-      boss: 'Gate test · ' + XP.boss + ' XP · pass to unlock the next level',
+      boss: 'Boss fight · ' + XP.boss + ' XP · win to unlock the next level',
     }[step.type];
+  }
+
+  /** The "now try it for real" checklist for a level. Ticks are saved; the game cannot verify them. */
+  function tryItList(li) {
+    const L = LEVELS[li];
+    const ticks = S.tried[L.id] || (S.tried[L.id] = []);
+    const box = document.createElement('div');
+    box.className = 'tryit';
+    box.innerHTML = '<h3>Now try it for real</h3><p>Open an actual terminal and do these in Claude Code. Tick them off as you go.</p>';
+    EXTRAS[L.id].tryIt.forEach((text, i) => {
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!ticks[i];
+      cb.addEventListener('change', () => { ticks[i] = cb.checked; save(); });
+      const span = document.createElement('span');
+      span.textContent = text;
+      label.append(cb, span);
+      box.appendChild(label);
+    });
+    return box;
+  }
+
+  /** Energy-drink cans rain onto the avatar, which then powers up. */
+  function dropCans(heroStage) {
+    const N = 6;
+    const later = (fn, ms) => { const t = setTimeout(fn, ms); cleanups.push(() => clearTimeout(t)); };
+    for (let i = 0; i < N; i++) {
+      const can = document.createElement('div');
+      can.className = 'can';
+      can.innerHTML = FX.canSVG();
+      can.style.left = 50 + (i - (N - 1) / 2) * 7 * (i % 2 ? 1 : -1) + '%';
+      can.style.animationDelay = i * 0.17 + 's';
+      heroStage.appendChild(can);
+      later(() => FX.sfx('can'), i * 170 + 560);
+    }
+    later(() => { heroStage.classList.add('powerup'); FX.sfx('powerup'); }, N * 170 + 620);
   }
 
   function renderLevelDone(stage, li) {
     const L = LEVELS[li];
     const last = li === LEVELS.length - 1;
-    const hero = S.mode === 'full' ? '<div class="big-avatar">' + avatarSVG(S.avatar) + '</div>' : null;
-    if (allComplete() && (last || S.mode === 'free')) {
+    const celebrate = !!view.celebrate;
+    view.celebrate = false;
+    const finale = allComplete() && (last || S.mode === 'free');
+    const n = li + 1;
+
+    let html =
+      '<section class="card finale">' +
+      '<div class="hero-stage"><div class="big-avatar">' + avatarSVG(S.avatar) + '</div>' +
+      (finale ? '<div class="rescued">' + FX.princessSVG(true) + '</div>' : '') + '</div>' +
+      (S.perfect[L.id] ? '<div class="flawless">★ Flawless run' + (celebrate ? ' · ' + n + ' firework' + (n === 1 ? '' : 's') + '!' : '') + '</div>' : '');
+
+    if (finale) {
       const pct = Math.round((S.xp / MAX_XP) * 100);
-      stage.innerHTML =
-        '<section class="card finale">' +
-        (hero || '<div class="big-icon">✻</div>') +
+      html +=
         '<h1>Quest complete</h1>' +
-        '<p>You cleared all ' + LEVELS.length + ' levels and passed the final exam.</p>' +
+        '<p><strong>Princess Dario is free.</strong> You cleared all ' + LEVELS.length + ' levels and sent every king into the lava.</p>' +
         '<div class="cert"><div class="cert-rank">' + esc(rankFor(S.xp)) + '</div>' +
         '<div class="cert-xp">' + S.xp + ' of ' + MAX_XP + ' XP · ' + pct + '%</div></div>' +
         '<p>The real thing is one command away. Open a terminal, <code>cd</code> into a project and type <code>claude</code>. ' +
-        'Start with <code>/init</code>, then try the explore, plan, code, verify, commit loop on something small.</p>' +
-        '<p class="note">Lost XP to hints? Reset and replay for a perfect run.</p>' +
-        '</section>';
-      return;
-    }
-    const head =
-      '<section class="card finale">' +
-      (hero || '<div class="big-icon">' + esc(L.icon) + '</div>') +
-      '<h1>Level ' + (li + 1) + ' complete</h1>' +
-      '<p>' + esc(L.title) + ' is done. Rank: <strong>' + esc(rankFor(S.xp)) + '</strong> · ' + S.xp + ' XP</p>';
-
-    if (S.mode === 'free') {
-      const left = LEVELS.length - LEVELS.filter((_, i) => levelComplete(i)).length;
-      stage.innerHTML = head +
-        '<p class="up-next">' + left + ' level' + (left === 1 ? '' : 's') + ' still to finish. Pick whichever you want next.</p>' +
-        '<button class="primary" id="go">Pick another level</button></section>';
-      $('#go', stage).addEventListener('click', goHome);
+        'Your cheat sheet has everything you learned.</p>' +
+        '<button class="primary" id="go">Open the cheat sheet</button>';
     } else {
-      const N = LEVELS[li + 1];
-      stage.innerHTML = head +
-        '<p class="up-next">Unlocked: <strong>Level ' + (li + 2) + ' · ' + esc(N.title) + '</strong><br>' + esc(N.tagline) + '</p>' +
-        '<button class="primary" id="go">Start level ' + (li + 2) + ' →</button></section>';
-      $('#go', stage).addEventListener('click', () => openLevel(li + 1));
+      html +=
+        '<h1>Level ' + n + ' complete</h1>' +
+        (last ? '' : '<p class="castle">“Thank you, Claude! But Princess Dario is in another castle.”</p>') +
+        '<p>' + esc(L.title) + ' is done. Rank: <strong>' + esc(rankFor(S.xp)) + '</strong> · ' + S.xp + ' XP</p>';
+      if (S.mode === 'free') {
+        const left = LEVELS.length - LEVELS.filter((_, i) => levelComplete(i)).length;
+        html += '<p class="up-next">' + left + ' level' + (left === 1 ? '' : 's') + ' still to finish. Pick whichever you want next.</p>' +
+          '<button class="primary" id="go">Pick another level</button>';
+      } else {
+        const N = LEVELS[li + 1];
+        html += '<p class="up-next">Unlocked: <strong>Level ' + (n + 1) + ' · ' + esc(N.title) + '</strong><br>' + esc(N.tagline) + '</p>' +
+          '<button class="primary" id="go">Start level ' + (n + 1) + ' →</button>';
+      }
     }
-    $('#go', stage).focus({ preventScroll: true });
+    stage.innerHTML = html + '</section>';
+    $('.finale', stage).appendChild(tryItList(li));
+
+    const go = $('#go', stage);
+    go.addEventListener('click', finale ? openSheet : S.mode === 'free' ? goHome : () => openLevel(li + 1));
+    go.focus({ preventScroll: true });
+
+    if (celebrate) {
+      const heroStage = $('.hero-stage', stage);
+      cleanups.push(FX.fireworks(n, () => dropCans(heroStage)));
+    }
+  }
+
+  function openSheet() {
+    view = { screen: 'sheet', level: view.level, step: 0 };
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  function renderSheet(stage) {
+    const st = sheetStats();
+    stage.innerHTML =
+      '<div class="sheet">' +
+      '<h1>Cheat sheet</h1>' +
+      '<p class="home-sub">' + st.got + ' of ' + st.total + ' entries unlocked. Each one appears when you pass the task that teaches it.</p>' +
+      '<div class="sheet-tools"><input type="search" id="sheet-q" placeholder="Filter, e.g. clear or hook" aria-label="Filter the cheat sheet">' +
+      '<button class="ghost small" id="print">Print</button></div>' +
+      '<div class="sheet-body"></div></div>';
+    const body = $('.sheet-body', stage);
+
+    LEVELS.forEach((L, li) => {
+      const sec = document.createElement('section');
+      sec.className = 'card sheet-sec';
+      sec.innerHTML = '<div class="tag">Level ' + (li + 1) + '</div><h2>' + esc(L.title) + '</h2>';
+      const dl = document.createElement('div');
+      dl.className = 'sheet-rows';
+      EXTRAS[L.id].sheet.forEach(([si, cmd, desc]) => {
+        const open = isDone(li, si);
+        const row = document.createElement('div');
+        row.className = 'sheet-row' + (open ? '' : ' locked');
+        row.innerHTML = open
+          ? '<code>' + esc(cmd) + '</code><span>' + esc(desc) + '</span>'
+          : '<code>🔒 ? ? ?</code><span>Pass “' + esc(L.steps[si].title) + '” to unlock</span>';
+        if (open) row.dataset.text = (cmd + ' ' + desc).toLowerCase();
+        dl.appendChild(row);
+      });
+      sec.appendChild(dl);
+      if (levelComplete(li)) sec.appendChild(tryItList(li));
+      body.appendChild(sec);
+    });
+
+    $('#print', stage).addEventListener('click', () => window.print());
+    $('#sheet-q', stage).addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      stage.querySelectorAll('.sheet-sec').forEach((sec) => {
+        let shown = 0;
+        sec.querySelectorAll('.sheet-row').forEach((row) => {
+          const hit = !q || (row.dataset.text || '').includes(q);
+          row.hidden = !hit;
+          if (hit) shown++;
+        });
+        sec.hidden = shown === 0;
+      });
+    });
   }
 
   function goHome() {
@@ -462,67 +618,167 @@
       host.appendChild(explain);
     },
 
+    // The gate test is a boss fight. Each right answer lands a hit; each wrong
+    // one costs a heart. Boss HP and hearts are sized so the fight is won at
+    // exactly the 75% pass mark.
     boss(step, host, ctx) {
       const total = step.questions.length;
       const need = Math.ceil(total * 0.75);
-      let qi = 0;
-      let score = 0;
-      const order = shuffled(total);
+      const maxHearts = total - need + 1;
+      // One boss, or a line-up to beat one after another. The hits needed are
+      // shared out across the line-up, with any extra going to the last ones.
+      const lineup = [].concat(step.boss || 'sam');
+      const hpOf = (i) => Math.floor(need / lineup.length) + (i >= lineup.length - (need % lineup.length) ? 1 : 0);
+      const everyone = lineup.length > 1 ? 'All ' + lineup.length + ' kings' : FX.bossName(lineup[0]);
+      let qi, hp, hearts, order, bi, bossHp;
+
+      host.innerHTML =
+        '<div class="arena">' +
+        '<div class="hud"><span class="hearts"></span>' +
+        '<span class="boss-hud"><span class="boss-name"></span><span class="hp"><span class="hp-fill"></span></span></span></div>' +
+        '<div class="fighter hero">' + avatarSVG(S.avatar) + '</div>' +
+        '<div class="spark">✻</div><div class="flame"></div>' +
+        '<div class="fighter boss"></div>' +
+        (lineup.length > 1 ? '<div class="cage hung">' + FX.princessSVG(false) + '</div>' : '') +
+        '<div class="bridge bridge-l"></div><div class="bridge bridge-r"></div>' +
+        '<div class="lava"></div>' +
+        '</div>' +
+        '<div class="fight"></div>';
+      const arena = $('.arena', host);
+      const fight = $('.fight', host);
+      const bossEl = $('.boss', arena);
+      let faceTimer = 0;
+      cleanups.push(() => clearTimeout(faceTimer));
+
+      const face = (state) => { bossEl.innerHTML = FX.bossSVG(state, lineup[bi]); };
+      function hud() {
+        $('.hearts', arena).textContent = '♥'.repeat(hearts) + '♡'.repeat(maxHearts - hearts);
+        $('.boss-name', arena).textContent =
+          FX.bossName(lineup[bi]).toUpperCase() + (lineup.length > 1 ? ' ' + (bi + 1) + '/' + lineup.length : '');
+        $('.hp-fill', arena).style.width = (bossHp / hpOf(bi)) * 100 + '%';
+      }
+      /** Play a one-off animation class, show a face for its duration, then settle. */
+      function act(cls, state, ms, settle) {
+        clearTimeout(faceTimer);
+        arena.classList.remove('hit', 'burn', 'enter', 'ko');
+        void arena.offsetWidth; // restart the animation
+        arena.classList.add(cls);
+        face(state);
+        faceTimer = setTimeout(() => { arena.classList.remove(cls); if (settle) face(settle); }, ms);
+      }
+      function reset() {
+        clearTimeout(faceTimer);
+        qi = 0;
+        bi = 0;
+        hp = need;
+        bossHp = hpOf(0);
+        hearts = maxHearts;
+        order = shuffled(total);
+        arena.className = 'arena';
+        if ($('.cage', arena)) $('.cage', arena).innerHTML = FX.princessSVG(false);
+        face('idle');
+        hud();
+      }
 
       function intro() {
-        host.innerHTML =
-          '<div class="prose"><p>' + total + ' questions on everything in this level. No hints, one attempt per question.</p>' +
-          '<p>Pass mark: <strong>' + need + ' of ' + total + '</strong>. Fail and you can retake it straight away.</p></div>';
+        reset();
+        fight.innerHTML =
+          '<div class="prose"><p>' +
+          (lineup.length > 1
+            ? '<strong>' + everyone + '</strong> block the bridge, one after another: ' + lineup.map(FX.bossName).join(', ') + '. Every right answer lands a hit; every wrong one and you get fire.'
+            : '<strong>' + everyone + '</strong> blocks the bridge. Every right answer lands a hit; every wrong one and he breathes fire.') +
+          '</p>' +
+          '<p>Land <strong>' + need + ' hit' + (need === 1 ? '' : 's') + '</strong> before you lose your <strong>' + maxHearts + ' heart' + (maxHearts === 1 ? '' : 's') + '</strong>. No hints.</p></div>';
         const b = document.createElement('button');
         b.className = 'primary';
-        b.textContent = 'Begin test';
+        b.textContent = 'Fight!';
         b.addEventListener('click', ask);
-        host.appendChild(b);
+        fight.appendChild(b);
       }
 
       function ask() {
         ctx.note('');
         const q = step.questions[order[qi]];
-        host.innerHTML =
-          '<div class="boss-meta">Question ' + (qi + 1) + ' of ' + total + ' · score ' + score + '</div>' +
-          '<p class="question">' + esc(q.q) + '</p>';
+        fight.innerHTML = '<p class="question">' + esc(q.q) + '</p>';
         const explain = document.createElement('p');
         explain.className = 'explain';
         explain.hidden = true;
         const cont = document.createElement('button');
         cont.className = 'primary';
         cont.hidden = true;
-        cont.textContent = qi + 1 < total ? 'Next question' : 'See result';
-        cont.addEventListener('click', () => { qi++; qi < total ? ask() : result(); });
-        optionButtons(q, host, {
+        cont.addEventListener('click', () => {
+          qi++;
+          if (hp === 0 || hearts === 0) return result();
+          if (bossHp === 0) {
+            // The next king in the line-up drops in.
+            bi++;
+            bossHp = hpOf(bi);
+            hud();
+            act('enter', 'jump', 600, 'idle');
+          }
+          ask();
+        });
+        optionButtons(q, fight, {
           retry: false,
           onPick(right) {
-            if (right) score++;
+            if (right) {
+              hp--;
+              bossHp--;
+              hud();
+              if (bossHp === 0) {
+                // 'won' ends the fight; 'ko' clears the bridge for the next king.
+                clearTimeout(faceTimer);
+                arena.classList.remove('hit', 'burn', 'enter');
+                arena.classList.add(hp === 0 ? 'won' : 'ko');
+                face('beaten');
+                const cage = hp === 0 && $('.cage', arena);
+                if (cage) cage.innerHTML = FX.princessSVG(true); // the last king is down: he is out
+                FX.sfx('hit');
+                FX.sfx('fall');
+                faceTimer = setTimeout(() => FX.sfx('splash'), 1000);
+              } else {
+                FX.sfx('hit');
+                act('hit', 'jump', 700, 'idle');
+              }
+            } else {
+              hearts--;
+              hud();
+              ctx.miss();
+              FX.sfx('fire');
+              act('burn', 'fire', 1000, 'idle');
+              if (hearts === 0) arena.classList.add('lost');
+            }
             explain.textContent = (right ? '✓ ' : '✗ ') + q.explain;
             explain.classList.toggle('miss', !right);
             explain.hidden = false;
+            cont.textContent = hp === 0 ? 'Claim your victory' : hearts === 0 ? 'See result' : bossHp === 0 ? 'Next boss' : 'Next question';
             cont.hidden = false;
             cont.focus({ preventScroll: true });
           },
         });
-        host.append(explain, cont);
+        fight.append(explain, cont);
       }
 
       function result() {
-        const pass = score >= need;
-        host.innerHTML =
+        const pass = hp === 0;
+        const landed = need - hp;
+        fight.innerHTML =
           '<div class="result ' + (pass ? 'pass' : 'failr') + '">' +
-          '<div class="score">' + score + ' / ' + total + '</div>' +
-          '<div>' + (pass ? 'Passed.' : 'Not enough this time. You need ' + need + '.') + '</div></div>';
+          '<div class="score">' + landed + ' / ' + need + ' hits</div>' +
+          '<div>' + (pass
+            ? everyone + (lineup.length > 1 ? ' are' : ' is') + ' in the lava.'
+            : 'Out of hearts. ' + FX.bossName(lineup[bi]) + ' is still standing.') + '</div></div>';
         if (pass) {
-          ctx.finish(false, score === total ? 'Perfect score!' : 'Test passed!');
+          FX.sfx('win');
+          ctx.finish(false, hearts === maxHearts ? 'Boss beaten without a scratch!' : 'Boss beaten!', true);
         } else {
-          ctx.fail('Review the lessons with the dots above, or retake now.');
+          FX.sfx('lose');
+          ctx.fail('Review the lessons with the dots above, or fight again.', true);
           const b = document.createElement('button');
           b.className = 'primary';
-          b.textContent = 'Retake test';
-          b.addEventListener('click', () => { qi = 0; score = 0; order.splice(0, total, ...shuffled(total)); ask(); });
-          host.appendChild(b);
+          b.textContent = 'Fight again';
+          b.addEventListener('click', () => { reset(); ask(); });
+          fight.appendChild(b);
         }
       }
 
@@ -846,6 +1102,14 @@
     goHome();
   });
   $('#menu').addEventListener('click', goHome);
+  $('#sheet').addEventListener('click', openSheet);
+  $('#mute').addEventListener('click', () => {
+    S.muted = !S.muted;
+    save();
+    FX.setMuted(S.muted);
+    renderTop();
+    FX.sfx('ok');
+  });
   $('#home').addEventListener('click', goHome);
 
   render();

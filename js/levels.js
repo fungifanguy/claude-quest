@@ -7,7 +7,7 @@
  *   keys     { title, brief, scenario: 'plan'|'interrupt'|'rewind' }
  *   editor   { title, brief, filename, starter, validate(text) -> null | error string, hint, solution }
  *   order    { title, brief, items[] (in the correct order) }
- *   boss     { title, questions: [{ q, options[], answer, explain }] }
+ *   boss     { title, questions: [{ q, options[], answer, explain }] }   (played as a boss fight)
  *
  * Loaded as a plain script in the browser and via require() in the tests.
  */
@@ -164,7 +164,8 @@ claude</pre>
       },
       {
         type: 'boss',
-        title: 'Gate test: Boot Up',
+        title: 'Boss fight: Boot Up',
+        boss: 'mark',
         questions: [
           {
             q: 'Why should you cd into your project before running claude?',
@@ -332,7 +333,8 @@ claude</pre>
       },
       {
         type: 'boss',
-        title: 'Gate test: Talking to Claude',
+        title: 'Boss fight: Talking to Claude',
+        boss: 'jeff',
         questions: [
           {
             q: 'What does starting a line with ! do?',
@@ -513,7 +515,8 @@ claude</pre>
       },
       {
         type: 'boss',
-        title: 'Gate test: Slash Commands',
+        title: 'Boss fight: Slash Commands',
+        boss: 'palmer',
         questions: [
           {
             q: 'You just finished a feature and are about to start a totally different one. Best move?',
@@ -632,7 +635,8 @@ claude</pre>
       },
       {
         type: 'boss',
-        title: 'Gate test: Permissions & Modes',
+        title: 'Boss fight: Permissions & Modes',
+        boss: 'peter',
         questions: [
           {
             q: 'What can Claude do in plan mode?',
@@ -765,7 +769,8 @@ claude</pre>
       },
       {
         type: 'boss',
-        title: 'Gate test: Project Memory',
+        title: 'Boss fight: Project Memory',
+        boss: 'jensen',
         questions: [
           {
             q: 'When is CLAUDE.md read?',
@@ -918,7 +923,8 @@ claude</pre>
       },
       {
         type: 'boss',
-        title: 'Gate test: The Core Workflow',
+        title: 'Boss fight: The Core Workflow',
+        boss: 'elon',
         questions: [
           {
             q: 'Why plan before coding on a larger change?',
@@ -1076,7 +1082,8 @@ claude</pre>
       },
       {
         type: 'boss',
-        title: 'Gate test: Settings & Rules',
+        title: 'Boss fight: Settings & Rules',
+        boss: 'sam',
         questions: [
           {
             q: 'What does the rule "Bash(npm run *)" in allow do?',
@@ -1237,7 +1244,8 @@ Fix GitHub issue $ARGUMENTS.
       },
       {
         type: 'boss',
-        title: 'Gate test: Custom Commands & Skills',
+        title: 'Boss fight: Custom Commands & Skills',
+        boss: 'mark',
         questions: [
           {
             q: 'You type /fix-issue 482. What does $ARGUMENTS become in the skill body?',
@@ -1419,7 +1427,8 @@ Fix GitHub issue $ARGUMENTS.
       },
       {
         type: 'boss',
-        title: 'Gate test: Subagents, Hooks & MCP',
+        title: 'Boss fight: Subagents, Hooks & MCP',
+        boss: 'elon',
         questions: [
           {
             q: 'What is an MCP server for?',
@@ -1572,7 +1581,8 @@ git diff | claude -p "review this diff for bugs"</pre>`,
       },
       {
         type: 'boss',
-        title: 'FINAL EXAM',
+        title: 'Final boss: the exam',
+        boss: ['mark', 'jeff', 'palmer', 'peter', 'jensen', 'elon', 'sam'],
         questions: [
           {
             q: 'You open your terminal to work on a project with Claude. What are the first two commands?',

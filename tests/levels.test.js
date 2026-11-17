@@ -3,6 +3,7 @@
 //   node claude-quest/tests/levels.test.js
 const LEVELS = require('../js/levels.js');
 
+const BOSS_IDS = ['mark', 'jeff', 'palmer', 'peter', 'jensen', 'elon', 'sam']; // keep in step with BOSSES in js/fx.js
 const TYPES = ['lesson', 'quiz', 'terminal', 'keys', 'editor', 'order', 'boss'];
 const norm = (s) => s.replace(/\s+/g, ' ').trim();
 let checks = 0;
@@ -32,6 +33,11 @@ LEVELS.forEach((L, li) => {
     if (s.type === 'lesson') check(s.body && s.body.length > 80, where + ': lesson body too short');
     if (s.type === 'quiz') checkQuestion(s, where);
     if (s.type === 'boss') s.questions.forEach((q, qi) => checkQuestion(q, `${where} q${qi}`));
+    if (s.type === 'boss') {
+      const who = [].concat(s.boss || []);
+      check(who.length > 0 && who.every((b) => BOSS_IDS.includes(b)), `${where}: boss must name known bosses`);
+      check(who.length <= Math.ceil(s.questions.length * 0.75), `${where}: more bosses than hits needed`);
+    }
     if (s.type === 'keys') check(['plan', 'interrupt', 'rewind'].includes(s.scenario), where + ': unknown scenario');
     if (s.type === 'order') check(s.items.length >= 3, where + ': needs 3+ items');
 
@@ -55,6 +61,22 @@ LEVELS.forEach((L, li) => {
     }
   });
 });
+
+// Cheat sheet and "try it for real" data must line up with the levels.
+const EXTRAS = require('../js/extras.js');
+LEVELS.forEach((L) => {
+  const X = EXTRAS[L.id];
+  check(!!X, `extras: nothing for level ${L.id}`);
+  if (!X) return;
+  check(X.tryIt.length >= 3, `extras ${L.id}: needs 3+ try-it items`);
+  check(X.sheet.length >= 3, `extras ${L.id}: needs 3+ cheat-sheet entries`);
+  X.sheet.forEach(([si, cmd, desc]) => {
+    const step = L.steps[si];
+    check(!!step && step.type !== 'lesson' && step.type !== 'boss', `extras ${L.id}: "${cmd}" must unlock on a task step, got index ${si}`);
+    check(cmd && desc, `extras ${L.id}: entry missing text`);
+  });
+});
+check(Object.keys(EXTRAS).length === LEVELS.length, 'extras: has a level id that does not exist');
 
 if (problems.length) {
   console.error(problems.join('\n'));

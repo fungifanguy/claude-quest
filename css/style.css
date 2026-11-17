@@ -212,7 +212,7 @@ pre {
 }
 .guide { position: absolute; top: 14px; right: 18px; width: 52px; height: 52px; }
 .guide .avatar { width: 100%; height: 100%; }
-.big-avatar { width: 120px; height: 120px; margin: 0 auto 8px; }
+.big-avatar { width: 120px; height: 120px; margin: 0 auto 8px; transform-origin: 50% 100%; }
 .big-avatar .avatar { width: 100%; height: 100%; }
 .term-keys { margin-top: 8px; font-size: 0.78rem; color: var(--muted); }
 .tag {
@@ -415,6 +415,140 @@ button.small { padding: 5px 10px; font-size: 0.8rem; }
 .cert-rank { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
 .cert-xp { font: 0.9rem var(--mono); color: var(--muted); }
 
+/* ------------------------------------------------------------ boss arena */
+.arena {
+  position: relative;
+  height: 210px;
+  margin-bottom: 16px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #2c2a22;
+  background-color: #1d1b26;
+  background-image:
+    linear-gradient(#15131c 2px, transparent 2px),
+    linear-gradient(90deg, #15131c 2px, transparent 2px),
+    linear-gradient(90deg, transparent 22px, #15131c 22px, #15131c 24px, transparent 24px);
+  background-size: 44px 22px, 44px 44px, 44px 44px;
+  background-position: 0 0, 0 0, 0 22px;
+}
+.hud { position: absolute; inset: 8px 12px auto; display: flex; justify-content: space-between; align-items: center; z-index: 3; font: 700 0.8rem var(--mono); color: #fff; }
+.hearts { color: #ff5a4f; font-size: 1.15rem; letter-spacing: 2px; }
+.boss-hud { display: flex; align-items: center; gap: 8px; }
+.hp { width: 110px; height: 10px; background: #000; border: 2px solid #fff; }
+.hp-fill { display: block; height: 100%; width: 100%; background: #e8421c; transition: width 0.3s steps(4); }
+.lava {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 34px; z-index: 2;
+  background: repeating-linear-gradient(90deg, #ffb238 0 14px, #ff8a1f 14px 28px);
+  border-top: 4px solid #ffe07a;
+  animation: lava 1.2s steps(4) infinite;
+}
+@keyframes lava { to { background-position: 28px 0; } }
+.bridge {
+  position: absolute; bottom: 38px; height: 12px; z-index: 1;
+  background: repeating-linear-gradient(90deg, #9a6a35 0 18px, #5f3d1c 18px 20px);
+  border-top: 2px solid #c58d4e;
+}
+.bridge-l { left: 0; width: 52%; }
+.bridge-r { left: 52%; right: 0; }
+.fighter { position: absolute; z-index: 1; }
+.fighter svg { display: block; width: 100%; height: auto; }
+.fighter.hero { left: 12%; bottom: 50px; width: 58px; }
+.fighter.boss { right: 9%; bottom: 46px; width: 112px; }
+.spark, .flame { position: absolute; opacity: 0; z-index: 2; pointer-events: none; }
+.spark { bottom: 86px; left: 22%; color: #ffd34f; font: 700 1.6rem var(--mono); }
+.flame {
+  bottom: 96px; right: 30%; width: 90px; height: 28px;
+  background: linear-gradient(90deg, #fff3a0, #ffb238 35%, #e8421c);
+  clip-path: polygon(0 50%, 22% 12%, 40% 30%, 62% 0, 100% 35%, 100% 65%, 62% 100%, 40% 70%, 22% 88%);
+}
+.arena.hit .spark { animation: spark-fly 0.4s linear; }
+.arena.hit .boss { animation: boss-jump 0.7s; }
+.arena.burn .flame { animation: flame-fly 0.8s linear; }
+.arena.burn .hero { animation: scorched 1s steps(2); }
+.arena.won .bridge-r { animation: bridge-drop 0.5s ease-in forwards; }
+.arena.won .boss { animation: boss-fall 1.5s 0.15s ease-in forwards; }
+.arena.ko .bridge-r { animation: bridge-drop 0.5s ease-in forwards; }
+.arena.ko .boss { animation: boss-fall 1.5s 0.15s ease-in forwards; }
+.arena.enter .boss { animation: boss-enter 0.6s ease-out; }
+.arena.lost .hero { filter: grayscale(1) brightness(0.6); transform: rotate(90deg) translateX(12px); }
+@keyframes spark-fly { 0% { opacity: 1; left: 22%; } 90% { opacity: 1; left: 72%; } 100% { opacity: 0; left: 74%; } }
+@keyframes flame-fly { 0% { opacity: 1; right: 30%; transform: scaleX(0.4); } 80% { opacity: 1; right: 68%; transform: scaleX(1.2); } 100% { opacity: 0; right: 72%; } }
+@keyframes boss-jump { 30% { transform: translateY(-46px); } 60% { transform: translateY(0); } 75% { transform: translateY(-8px); } }
+@keyframes scorched { 50% { filter: brightness(0.25) sepia(1) saturate(6) hue-rotate(-30deg); } }
+@keyframes bridge-drop { to { transform: translateY(70px); opacity: 0; } }
+@keyframes boss-enter { 0% { transform: translateY(-220px); } 70% { transform: translateY(0); } 85% { transform: translateY(-10px); } }
+@keyframes boss-fall { 25% { transform: translateY(-14px) rotate(-6deg); } 100% { transform: translateY(190px) rotate(50deg); } }
+.result .score { font-size: 2.1rem; }
+
+/* ------------------------------------------------------------ the rescue */
+.cage { position: relative; width: 46px; flex: none; padding: 3px 5px 0; border: 3px solid #8b8f99; border-radius: 6px 6px 2px 2px; background: #2a2833; }
+.cage svg { display: block; width: 100%; height: auto; }
+.cage::after { /* bars */
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 9px, #8b8f99 9px 12px);
+  transition: opacity 0.4s 0.9s;
+}
+.cage.hung { position: absolute; left: 46%; top: 24px; z-index: 1; }
+.cage.hung::before { content: ''; position: absolute; left: 50%; top: -30px; width: 3px; height: 28px; margin-left: -1px; background: repeating-linear-gradient(#8b8f99 0 4px, transparent 4px 6px); }
+.arena.won .cage::after, .arena.won .cage.hung::before { opacity: 0; }
+.cage.hung::before { transition: opacity 0.4s 0.9s; }
+.arena.won .cage { border-color: transparent; background: none; transition: border-color 0.4s 0.9s, background 0.4s 0.9s; }
+.arena.won .cage svg { animation: cheer 0.5s 1.3s 4 ease-in-out; }
+@keyframes cheer { 50% { transform: translateY(-9px); } }
+.story { display: flex; align-items: center; gap: 16px; padding: 12px 16px; margin-bottom: 22px; border: 1px solid var(--line, #d9d2c5); border-radius: 10px; }
+.story p { margin: 0; }
+.castle { font-style: italic; }
+.rescued { position: absolute; right: 0; bottom: 0; width: 52px; animation: cheer 0.6s 3 ease-in-out; }
+
+/* ------------------------------------------------------------ celebration */
+.fx-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 50; }
+.hero-stage { position: relative; width: 240px; margin: 0 auto; padding-top: 6px; }
+.flawless { color: var(--warn); font-weight: 700; letter-spacing: 0.03em; margin-bottom: 4px; }
+.can { position: absolute; top: -150px; width: 18px; margin-left: -9px; opacity: 0; animation: can-fall 0.6s ease-in forwards; z-index: 2; }
+.can svg { display: block; width: 100%; }
+@keyframes can-fall {
+  0% { opacity: 1; transform: translateY(0) rotate(0); }
+  88% { opacity: 1; transform: translateY(205px) rotate(200deg); }
+  100% { opacity: 0; transform: translateY(195px) rotate(220deg) scale(0.4); }
+}
+.hero-stage.powerup .big-avatar { animation: power-up 0.75s steps(1) forwards; }
+@keyframes power-up {
+  0% { transform: scale(1); } 14% { transform: scale(1.3); } 28% { transform: scale(1); }
+  42% { transform: scale(1.3); } 56% { transform: scale(1.1); } 70% { transform: scale(1.35); }
+  84% { transform: scale(1.2); } 100% { transform: scale(1.35); }
+}
+.hero-stage.powerup { margin-bottom: 14px; }
+
+/* ------------------------------------------------------------ try it / cheat sheet */
+.tryit { text-align: left; max-width: 560px; margin: 22px auto 0; padding: 14px 16px; background: var(--panel-2); border-radius: 10px; }
+.tryit h3 { margin: 0 0 2px; font-size: 1rem; }
+.tryit p { margin: 0 0 8px; color: var(--muted); font-size: 0.9rem; max-width: none; }
+.tryit label { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; cursor: pointer; }
+.tryit input { margin-top: 5px; accent-color: var(--accent); flex: none; width: 16px; height: 16px; }
+.tryit input:checked + span { color: var(--muted); text-decoration: line-through; }
+.sheet > h1 { margin-bottom: 4px; }
+.sheet-tools { display: flex; gap: 10px; margin-bottom: 16px; }
+.sheet-tools input {
+  flex: 1; min-width: 0; padding: 9px 12px; font: inherit; color: var(--text);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+}
+.sheet-body { display: grid; gap: 14px; }
+.sheet-sec { padding: 18px 22px; }
+.sheet-sec h2 { margin: 2px 0 10px; font-size: 1.15rem; }
+.sheet-row { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 14px; padding: 7px 0; border-top: 1px solid var(--line); align-items: start; }
+.sheet-row code { justify-self: start; }
+.sheet-row.locked { color: var(--muted); font-size: 0.9rem; }
+.sheet-row.locked code { opacity: 0.6; }
+.sheet-sec .tryit { margin: 14px 0 0; max-width: none; }
+
+@media print {
+  .top, .sheet-tools, .foot, .map { display: none !important; }
+  body { background: #fff; color: #000; }
+  .card { border: 1px solid #999; background: #fff; break-inside: avoid; }
+  code { background: #eee; color: #000; }
+  .sheet-row.locked { display: none; }
+}
+
 /* ------------------------------------------------------------ small screens */
 @media (max-width: 480px) {
   .level-grid { grid-template-columns: minmax(0, 1fr); }
@@ -431,8 +565,11 @@ button.small { padding: 5px 10px; font-size: 0.8rem; }
   .lvl-state, .lvl-n { display: none; }
   .lvl-icon { width: 30px; height: 30px; }
   .top { padding: 8px 16px; gap: 6px 12px; }
-  .status { flex-wrap: nowrap; gap: 10px; width: 100%; }
-  .status #reset { margin-left: auto; }
+  .status { gap: 8px; width: 100%; }
+  .xp span { display: none; }
+  .sheet-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .fighter.boss { width: 92px; right: 4%; }
+  .hp { width: 70px; }
   .xp-bar { width: 48px; }
   .card { padding: 18px 16px 20px; }
   h1 { font-size: 1.3rem; }
